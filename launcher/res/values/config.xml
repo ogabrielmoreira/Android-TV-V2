@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Ajustes do launcher. Edite e rode build.sh.
+-->
+<resources>
+    <!-- Quantos apps cabem no menu de baixo (fora o "Mais apps"). -->
+    <integer name="dock_max">6</integer>
+
+    <!-- Sugestoes para a primeira vez que a tela abre. So entram as que estiverem instaladas; depois disso o
+         menu de baixo se monta sozinho com os apps que a pessoa abre. -->
+    <string-array name="dock_suggestions">
+        <item>com.google.android.youtube.tv</item>
+        <item>com.netflix.ninja</item>
+        <item>com.amazon.amazonvideo.livingroom</item>
+        <item>com.globo.globotv</item>
+        <item>com.disney.disneyplus</item>
+        <item>com.android.vending</item>
+    </string-array>
+
+    <!-- Podem aparecer na grade, mas nao entram sozinhos no menu de baixo quando abertos. -->
+    <string-array name="dock_ignore">
+        <item>com.android.tv.settings</item>
+        <item>com.google.android.tvsetup</item>
+        <item>com.android.vending</item>
+    </string-array>
+
+    <!-- Nunca aparecem como tiles: launchers originais e ajudantes do sistema. -->
+    <string-array name="hidden_apps">
+        <item>com.google.android.tvlauncher</item>
+        <item>com.google.android.apps.tv.launcherx</item>
+        <item>com.google.android.leanbacklauncher</item>
+        <item>com.google.android.tv</item>
+        <item>com.droidlogic.BluetoothRemote</item>
+    </string-array>
+
+    <!-- Tiles por linha na grade de "Todos os apps". -->
+    <integer name="columns">5</integer>
+</resources>

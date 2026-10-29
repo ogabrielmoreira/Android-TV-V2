@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.tvhome.v2"
+    android:versionCode="3"
+    android:versionName="2.0">
+
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Opcional: saber quais apps foram abertos (inclusive pelos botoes do controle) para montar o menu de baixo.
+         Concedida por adb no install-launcher.sh; sem ela, o menu aprende so com o que e aberto pela tela inicial. -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <application
+        android:label="Início"
+        android:icon="@drawable/ic_home"
+        android:banner="@drawable/ic_home"
+        android:allowBackup="false"
+        android:theme="@style/Home">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:clearTaskOnLaunch="true"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Botao Apps (⋮⋮⋮) do controle abre o menu "Todos os apps" (servico ativado por adb).
+             Os outros botoes do controle nao sao mexidos. -->
+        <service
+            android:name=".RemoteButtonsService"
+            android:label="@string/remote_buttons_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/remote_buttons" />
+        </service>
+    </application>
+</manifest>
