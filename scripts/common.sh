@@ -12,11 +12,29 @@ else echo "adb nao encontrado (rode scripts/setup-sdk.sh)"; exit 1; fi
 LAUNCHER_PKG=com.tvhome.v2
 LAUNCHER_HOME=$LAUNCHER_PKG/.MainActivity
 BUTTONS_SVC=$LAUNCHER_PKG/$LAUNCHER_PKG.RemoteButtonsService
-# Launcher original do Android TV (Google TV usa com.google.android.apps.tv.launcherx).
-STOCK_LAUNCHER="${STOCK_LAUNCHER:-com.google.android.tvlauncher}"
-
 adb() { "$ADB_BIN" -s "$TV" "$@"; }
 connect() { "$ADB_BIN" connect "$TV" >/dev/null 2>&1 || true; }
+prop() { adb shell getprop "$1" | tr -d '\r'; }
+
+# Tela inicial de fabrica: a primeira destas instalada na TV (Google TV, Android TV, Android TV 5-7, Fire TV).
+# Para forcar outra: export STOCK_LAUNCHER=pacote
+stock_launcher() {
+  if [ -n "${STOCK_LAUNCHER:-}" ]; then echo "$STOCK_LAUNCHER"; return; fi
+  local p
+  for p in com.google.android.apps.tv.launcherx com.google.android.tvlauncher \
+           com.google.android.leanbacklauncher com.amazon.tv.launcher; do
+    if adb shell pm path "$p" 2>/dev/null | grep -q package:; then echo "$p"; return; fi
+  done
+}
+
+is_fire_tv() { [ "$(prop ro.product.manufacturer)" = "Amazon" ]; }
+
+# Deixa a V2 como tela inicial. "cmd package" so existe do Android 7 em diante; no 5 e 6 basta o launcher de
+# fabrica estar desativado (se aparecer "Abrir com", escolha Inicio e "Sempre").
+set_home() {
+  adb shell cmd package set-home-activity "$LAUNCHER_HOME" 2>/dev/null | grep -q -i success \
+    || adb shell pm set-home-activity "$LAUNCHER_HOME" >/dev/null 2>&1 || true
+}
 
 # Liga o servico "Botoes do controle". Zerar e gravar de novo forca o Android a religar o servico,
 # que ele desliga sempre que o launcher e reinstalado.

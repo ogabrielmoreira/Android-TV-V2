@@ -4,7 +4,18 @@ Tela inicial limpa, no estilo Apple TV, para Android TV e Google TV. Sem propaga
 baixo que **se monta sozinho com os apps que você usa**. **Sem root e sem formatar:** tudo pela rede, via ADB,
 e tudo reversível.
 
-Testado no **Xiaomi Mi TV Stick** (Android TV 9). Deve funcionar em outros aparelhos com Android TV 9 ou mais novo.
+## Funciona na minha TV?
+
+| Aparelho | Android | Funciona? |
+|---|---|---|
+| TVs e sticks com **Google TV** (Chromecast com Google TV, TCL, Philips, Sony recentes...) | 10 a 14 | **Sim**, como tela inicial |
+| TVs e sticks com **Android TV** (Xiaomi Mi TV Stick/Box, TVs de 2016 em diante...) | 5.0 a 12 | **Sim**, como tela inicial |
+| **Fire TV** com Fire OS 5 a 8 (Fire TV Stick até o 4K Max 2ª geração, TVs Fire TV) | 5.1 a 11 | **Só como app**: a Amazon não deixa trocar a tela inicial |
+| **Fire TV** com Vega OS (Fire TV Stick 4K Select e HD de 2025 em diante) | não é Android | **Não**: a Amazon bloqueia instalar apps de fora da loja |
+| Aparelhos com Android anterior ao 5.0 | 4.x | **Não** |
+
+O `install-launcher.sh` reconhece sozinho se a TV é Google TV, Android TV ou Fire TV e faz o que dá em cada uma.
+Feito num **Xiaomi Mi TV Stick** (Android TV 9) e testado no emulador oficial de **Google TV** (Android 14).
 
 ## O que muda em relação à versão 1
 
@@ -39,11 +50,19 @@ para Android 9, traduzido para português e estendido. O original está preserva
 
 ### 1. Prepare a TV
 
-1. **Configurações → Preferências do dispositivo → Sobre** → aperte OK em **Build** 7 vezes.
-2. Volte em **Preferências do dispositivo → Opções do desenvolvedor** → ligue **Depuração USB**.
-   No Android 9 não existe "Depuração sem fio", e não precisa: com a Depuração USB ligada, o stick já aceita
-   ADB pela rede na porta 5555.
-3. Anote o IP: **Configurações → Rede e internet →** sua rede. O computador precisa estar no mesmo Wi-Fi.
+Ligue as opções do desenvolvedor e a depuração. Os menus mudam um pouco conforme o aparelho:
+
+| Aparelho | Liberar as opções do desenvolvedor | Ligar a depuração |
+|---|---|---|
+| Android TV | **Configurações → Preferências do dispositivo → Sobre** → OK em **Build** 7 vezes | **Preferências do dispositivo → Opções do desenvolvedor → Depuração USB** |
+| Google TV | **Configurações → Sistema → Sobre** → OK em **Build do SO do Android TV** 7 vezes | **Sistema → Opções do desenvolvedor → Depuração USB** |
+| Fire TV | **Configurações → Minha Fire TV → Sobre** → OK no nome do aparelho 7 vezes | **Minha Fire TV → Opções do desenvolvedor → Depuração ADB** |
+
+Com a depuração USB ligada, o aparelho aceita ADB pela rede na porta 5555. Se a sua TV mostrar
+**Depuração sem fio** com um código de pareamento, use `adb pair` com o endereço e o código que ela mostra, e depois
+o endereço de conexão no lugar do `:5555`.
+
+Anote o IP da TV (**Configurações → Rede e internet →** sua rede). O computador precisa estar no mesmo Wi-Fi.
 
 ### 2. Prepare o computador (macOS ou Linux)
 
@@ -102,8 +121,9 @@ launcher/build.sh
 scripts/install-launcher.sh
 ```
 
-O script instala o APK, desativa (não apaga) o launcher do Google, liga o serviço **"Botões do controle"**
-(só o botão Apps), libera o **acesso a uso** e aperta Home.
+O script confere o Android da TV, instala o APK, desativa (não apaga) a tela inicial de fábrica, liga o serviço
+**"Botões do controle"** (só o botão Apps), libera o **acesso a uso** e aperta Home. No Fire TV ele só instala e
+abre a V2 como app, porque a Amazon não deixa trocar a tela inicial.
 
 O acesso a uso deixa o menu de baixo ver os apps abertos por qualquer caminho, inclusive pelos botões do controle.
 Sem ele, o menu aprende só com os apps abertos pela própria tela inicial.
@@ -134,7 +154,7 @@ Nomes de pacote: `adb shell pm list packages`.
 
 | Quero | Comando |
 |---|---|
-| Voltar para a tela do Android TV | `scripts/switch-interface.sh android-tv` |
+| Voltar para a tela de fábrica (Android TV / Google TV) | `scripts/switch-interface.sh android-tv` |
 | Voltar para esta tela | `scripts/switch-interface.sh nova` |
 | Reinstalar os apps removidos | `scripts/restore.sh devices/xiaomi-mi-tv-stick/debloat.txt` |
 | Tirar um print da TV | `scripts/screenshot.sh` |
@@ -149,6 +169,9 @@ Um reset de fábrica também desfaz tudo.
 - **O d8 do build-tools 34 quebra com o JDK 21** (`NullPointerException` em classes anônimas):
   use o build-tools 36.1, que é o que o `setup-sdk.sh` baixa.
 - **Caminhos com espaço quebram o d8:** o `build.sh` compila numa pasta temporária em `/tmp`.
+- **Android 5 e 6 perguntam "Abrir com" ao apertar Home:** escolha **Início** e **Sempre**. Esses Androids não
+  têm o comando que define a tela inicial sozinho.
+- **Fire TV volta para a tela da Amazon ao apertar Home:** é bloqueio da Amazon. A V2 fica como app na lista de apps.
 - **Reinstalar o launcher desliga o serviço "Botões do controle":** o `install-launcher.sh` religa.
   Manualmente: Configurações → Acessibilidade → Botões do controle.
 

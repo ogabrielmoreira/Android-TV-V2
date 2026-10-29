@@ -9,4 +9,4 @@ sleep 2
 echo "modelo:   $(adb shell getprop ro.product.model | tr -d '\r')"
 echo "android:  $(adb shell getprop ro.build.version.release | tr -d '\r')"
 adb shell "grep -E 'MemTotal|MemAvailable' /proc/meminfo"
-echo "launcher: $(adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -1 | tr -d '\r')"
+echo "tela atual: $(adb shell dumpsys window | grep mCurrentFocus | tr -d "\r")"

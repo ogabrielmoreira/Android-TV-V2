@@ -93,6 +93,7 @@ public class MainActivity extends Activity {
     private FrameLayout optionsPanel;
     private View optionsAnchor;
     private static final long DAY_MS = 24 * 60 * 60 * 1000L;
+    private final boolean isFireTv = "Amazon".equalsIgnoreCase(android.os.Build.MANUFACTURER);
 
     private final Map<String, Integer> colorCache = new HashMap<>();
     private final List<View> dockCards = new ArrayList<>();
@@ -119,7 +120,6 @@ public class MainActivity extends Activity {
     private ValueAnimator glowAnim;
     private int lastFocusedId = View.NO_ID;
     private boolean firstShow = true;
-    private int packageSeq;
     private PopupWindow inputsPopup;
 
     private final BroadcastReceiver tick = new BroadcastReceiver() {
@@ -168,9 +168,8 @@ public class MainActivity extends Activity {
         updateWifi();
         View last = lastFocusedId == View.NO_ID ? null : findViewById(lastFocusedId);
         if (last == null && !dockCards.isEmpty()) last = dockCards.get(0);
-        if (last != null) last.requestFocus();
-        // Catch installs/removals that happened while another app was in front.
-        if (getPackageManager().getChangedPackages(packageSeq) != null) buildApps();
+        if (last != null) last.requestFocusFromTouch();
+        // Instalacoes e remocoes chegam pelo receiver "packages", que fica ativo ate o onDestroy.
         // Apps abertos enquanto a tela inicial estava escondida entram no dock.
         if (syncUsage() | dockDirty) { dockDirty = false; buildApps(); }
         if (firstShow) { firstShow = false; playEntrance(); }
@@ -203,7 +202,7 @@ public class MainActivity extends Activity {
         if (moving >= 0) finishMove();
         closeOptions(false);
         closeAppsMenu(false);
-        if (!dockCards.isEmpty()) dockCards.get(0).requestFocus();
+        if (!dockCards.isEmpty()) dockCards.get(0).requestFocusFromTouch();
         scroll.smoothScrollTo(0, 0);
         if (intent.getBooleanExtra(EXTRA_OPEN_APPS_MENU, false)) openAppsMenu();
     }
@@ -373,7 +372,7 @@ public class MainActivity extends Activity {
         LinearLayout right = new LinearLayout(this);
         right.setGravity(Gravity.CENTER_VERTICAL);
         right.setClipChildren(false);
-        wifiPill = pill("Android TV", "⌂");
+        wifiPill = pill("Tela original", "⌂");
         wifiPill.setOnClickListener(v -> openStockHome());
         TextView settings = pill("Configurações", "⚙");
         settings.setOnClickListener(v -> launch(new Intent(Settings.ACTION_SETTINGS)));
@@ -410,9 +409,9 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- apps
 
     private void buildApps() {
-        PackageManager pm = getPackageManager();
-        android.content.pm.ChangedPackages changed = pm.getChangedPackages(packageSeq);
-        if (changed != null) packageSeq = changed.getSequenceNumber();
+        // Lembra o app em foco: ao remover os cards, o Android passaria o foco para outro botao da tela.
+        View focused = getCurrentFocus();
+        String keep = focused != null && focused.getTag() instanceof App ? ((App) focused.getTag()).pkg : null;
         installed.clear();
         installed.putAll(loadApps(Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER));
         // Desinstalados saem do dock.
@@ -452,9 +451,14 @@ public class MainActivity extends Activity {
         App first = (App) dockCards.get(0).getTag();
         title.setText(first.label);
         setGlow(first.color);
-        View last = lastFocusedId == View.NO_ID ? null : findViewById(lastFocusedId);
-        if (last != null) last.requestFocus();
-        else dockCards.get(0).requestFocus();
+        View target = null;
+        if (keep != null) {
+            for (View c : dockCards) if (keep.equals(((App) c.getTag()).pkg)) target = c;
+            for (View c : gridCards) if (target == null && keep.equals(((App) c.getTag()).pkg)) target = c;
+        } else if (lastFocusedId != View.NO_ID) {
+            target = findViewById(lastFocusedId);
+        }
+        (target != null ? target : dockCards.get(0)).requestFocusFromTouch();
     }
 
     /** Apps abriveis, um por pacote. A primeira categoria ganha (a de TV traz o banner). */
@@ -469,7 +473,8 @@ public class MainActivity extends Activity {
                 a.pkg = ai.packageName;
                 a.label = String.valueOf(ri.loadLabel(pm));
                 a.component = new ComponentName(ai.packageName, ai.name);
-                a.tv = Intent.CATEGORY_LEANBACK_LAUNCHER.equals(cat);
+                // No Fire TV muitos apps de TV so se registram como LAUNCHER: la, todos vao para a grade.
+                a.tv = isFireTv || Intent.CATEGORY_LEANBACK_LAUNCHER.equals(cat);
                 Drawable banner = ai.loadBanner(pm);
                 if (banner == null) banner = ai.applicationInfo.loadBanner(pm);
                 a.isBanner = banner != null;
@@ -901,7 +906,7 @@ public class MainActivity extends Activity {
         rootView.addView(appsMenu, new FrameLayout.LayoutParams(-1, -1));
         appsMenu.setAlpha(0f);
         appsMenu.animate().alpha(1f).setDuration(220).start();
-        if (!cards.isEmpty()) cards.get(0).requestFocus();
+        if (!cards.isEmpty()) cards.get(0).requestFocusFromTouch();
     }
 
     private void closeAppsMenu(boolean restoreFocus) {
@@ -1008,28 +1013,35 @@ public class MainActivity extends Activity {
         boolean is24 = android.text.format.DateFormat.is24HourFormat(this);
         clock.setText(new SimpleDateFormat(is24 ? "H:mm" : "h:mm", Locale.getDefault()).format(now.getTime()));
         ampm.setText(is24 ? "" : (h < 12 ? "AM" : "PM"));
-        date.setText(new SimpleDateFormat("EEEE, d 'de' MMMM", Locale.getDefault()).format(now.getTime()).toUpperCase(Locale.getDefault()));
+        // Formato do idioma da TV ("quinta-feira, 29 de outubro" em portugues, "Thursday, October 29" em ingles).
+        String pattern = android.text.format.DateFormat.getBestDateTimePattern(Locale.getDefault(), "EEEEdMMMM");
+        date.setText(new SimpleDateFormat(pattern, Locale.getDefault()).format(now.getTime()).toUpperCase(Locale.getDefault()));
     }
 
     /** O atalho so aparece quando o launcher original esta ativo; um botao que nao abre nada confunde. */
     private void updateWifi() {
-        wifiPill.setVisibility(stockHomeEnabled() ? View.VISIBLE : View.GONE);
+        wifiPill.setVisibility(stockHome() != null ? View.VISIBLE : View.GONE);
     }
 
-    private static final String STOCK_HOME_PKG = "com.google.android.tvlauncher";
+    /** Telas iniciais de fabrica: Google TV, Android TV, Android TV 5-7 e Fire TV. */
+    private static final String[] STOCK_HOMES = {
+            "com.google.android.apps.tv.launcherx", "com.google.android.tvlauncher",
+            "com.google.android.leanbacklauncher", "com.amazon.tv.launcher"};
 
-    private boolean stockHomeEnabled() {
-        try {
-            return getPackageManager().getApplicationInfo(STOCK_HOME_PKG, 0).enabled;
-        } catch (PackageManager.NameNotFoundException e) {
-            return false;
+    /** A tela inicial de fabrica, se estiver instalada e ativa. */
+    private Intent stockHome() {
+        for (String pkg : STOCK_HOMES) {
+            Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(pkg);
+            ResolveInfo ri = getPackageManager().resolveActivity(i, 0);
+            if (ri != null) return i.setComponent(new ComponentName(pkg, ri.activityInfo.name));
         }
+        return null;
     }
 
-    /** Abre a tela inicial original do Android TV. */
+    /** Abre a tela inicial de fabrica. */
     private void openStockHome() {
-        launch(new Intent(Intent.ACTION_MAIN)
-                .setComponent(new ComponentName(STOCK_HOME_PKG, STOCK_HOME_PKG + ".MainActivity")));
+        Intent i = stockHome();
+        if (i != null) launch(i);
     }
 
     // ---------------------------------------------------------------- glow
@@ -1094,7 +1106,8 @@ public class MainActivity extends Activity {
             while (b.outWidth / (sample * 2) >= 1920) sample *= 2;
             o.inSampleSize = sample;
             try (java.io.InputStream in = openWallpaper(name)) { return BitmapFactory.decodeStream(in, null, o); }
-        } catch (java.io.IOException | RuntimeException e) {
+        } catch (java.io.IOException | RuntimeException | OutOfMemoryError e) {
+            // Aparelhos com pouca memoria: fica sem foto em vez de fechar a tela inicial.
             return null;
         }
     }

@@ -19,10 +19,10 @@ mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex" "$HERE/build"
 
 "$BT/aapt2" compile --dir "$HERE/res" -o "$OUT/res.zip"
 "$BT/aapt2" link -o "$OUT/base.apk" -I "$JAR" --manifest "$HERE/AndroidManifest.xml" --java "$OUT/gen" \
-  -A "$HERE/assets" --min-sdk-version 28 --target-sdk-version 28 "$OUT/res.zip"
+  -A "$HERE/assets" --min-sdk-version 21 --target-sdk-version 28 "$OUT/res.zip"
 javac -nowarn -Xlint:-options --release 11 -classpath "$JAR" -d "$OUT/classes" \
   "$HERE"/src/com/tvhome/v2/*.java $(find "$OUT/gen" -name '*.java')
-"$BT/d8" --min-api 28 --lib "$JAR" --output "$OUT/dex" $(find "$OUT/classes" -name '*.class')
+"$BT/d8" --min-api 21 --lib "$JAR" --output "$OUT/dex" $(find "$OUT/classes" -name '*.class')
 (cd "$OUT/dex" && zip -q -u ../base.apk classes.dex)
 "$BT/zipalign" -f 4 "$OUT/base.apk" "$OUT/aligned.apk"
 
