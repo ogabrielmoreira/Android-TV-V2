@@ -33,6 +33,10 @@
         <item>com.droidlogic.BluetoothRemote</item>
     </string-array>
 
+    <!-- Papel de parede: paisagens aleatorias do Wikimedia Commons (licenca livre) quando ha internet.
+         false = so as 12 fotos que vem no app (ou as enviadas com push-wallpapers.sh). -->
+    <bool name="online_wallpapers">true</bool>
+
     <!-- Tiles por linha na grade de "Todos os apps". -->
     <integer name="columns">5</integer>
 </resources>

@@ -28,7 +28,10 @@ Feito num **Xiaomi Mi TV Stick** (Android TV 9) e testado no emulador oficial de
 
 ## Como funciona
 
-- **Relógio grande, saudação e papel de parede** que troca a cada 10 minutos (12 fotos de natureza, ou as suas).
+- **Relógio grande, saudação e paisagens que mudam sozinhas:** a cada 10 minutos entra uma paisagem sorteada
+  entre as centenas de [fotos destacadas de paisagens do Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:Featured_pictures_of_landscapes),
+  todas com licença livre e com o nome do autor no rodapé. Sem internet, sorteia entre as 12 que vêm no app.
+  Também dá para usar as suas fotos.
 - **Menu de baixo que aprende:** na primeira vez ele mostra os apps de streaming mais comuns que estiverem
   instalados (YouTube, Netflix, Prime Video, Globoplay, Disney+, Play Store). Daí em diante, cada app que você
   abre entra no fim do menu. Com o menu cheio (6 apps), sai o que você usa há mais tempo.
@@ -128,9 +131,9 @@ abre a V2 como app, porque a Amazon não deixa trocar a tela inicial.
 O acesso a uso deixa o menu de baixo ver os apps abertos por qualquer caminho, inclusive pelos botões do controle.
 Sem ele, o menu aprende só com os apps abertos pela própria tela inicial.
 
-### 6. Seus papéis de parede (opcional)
+### 6. Suas fotos (opcional)
 
-Envie uma pasta com suas fotos (substituem as 12 de natureza que vêm no app):
+Envie uma pasta com suas fotos. Elas substituem as paisagens do Wikimedia Commons e as 12 que vêm no app:
 
 ```bash
 scripts/push-wallpapers.sh ~/Pictures/wallpapers-tv
@@ -147,6 +150,9 @@ Tudo em [`launcher/res/values/config.xml`](launcher/res/values/config.xml), depo
 - `dock_suggestions`: os apps que aparecem na primeira vez.
 - `dock_ignore`: apps que nunca entram sozinhos no menu de baixo (ex.: Configurações).
 - `hidden_apps`: apps que nunca aparecem.
+- `online_wallpapers`: `false` para usar só as fotos do app, sem internet.
+
+A assinatura do rodapé fica em [`launcher/res/values/strings.xml`](launcher/res/values/strings.xml) (`signature`).
 
 Nomes de pacote: `adb shell pm list packages`.
 
@@ -179,14 +185,16 @@ Um reset de fábrica também desfaz tudo.
 
 - Quando terminar, **desligue a Depuração USB**: com ela ligada, a porta 5555 fica aberta na sua rede.
 - O serviço "Botões do controle" só recebe as teclas do controle. Ele não lê o conteúdo da tela.
-- O acesso a uso é lido só para saber o nome dos apps abertos. Nada sai da TV: o launcher não acessa a internet.
+- O acesso a uso é lido só para saber o nome dos apps abertos, e essa informação não sai da TV.
+- O launcher só acessa a internet para baixar as paisagens do Wikimedia Commons. Para desligar, mude
+  `online_wallpapers` para `false` em `config.xml`.
 
 ## Estrutura
 
 ```text
 launcher/                      tela inicial (Java puro, sem Gradle) e o serviço do botão Apps
   res/values/config.xml        tamanho do menu de baixo, sugestões, apps escondidos, colunas
-  assets/wallpapers/           12 fotos (Wikimedia Commons, créditos em WALLPAPER-CREDITS.md)
+  assets/wallpapers/           12 fotos para quando não há internet (Wikimedia Commons, créditos em credits.txt)
 scripts/                       setup do SDK, conexão, limpeza/restauração, instalação, papéis de parede
 devices/xiaomi-mi-tv-stick/    lista de limpeza e mapa dos botões do controle
 upstream-tv-home/              projeto original tv-home (ferramentas em Python, exemplos, prompt)

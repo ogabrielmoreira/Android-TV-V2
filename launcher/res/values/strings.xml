@@ -2,4 +2,6 @@
 <resources>
     <string name="remote_buttons_label">Botões do controle</string>
     <string name="remote_buttons_desc">Faz o botão Apps do controle abrir o menu com todos os apps. Os outros botões continuam como vieram de fábrica. Não lê o conteúdo da tela.</string>
+    <!-- Assinatura discreta no canto de baixo da tela inicial. -->
+    <string name="signature">desenvolvido por @gabrieltechdesign</string>
 </resources>

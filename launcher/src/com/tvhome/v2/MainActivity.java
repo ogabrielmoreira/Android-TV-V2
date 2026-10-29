@@ -109,9 +109,16 @@ public class MainActivity extends Activity {
     private View gridShade;
     private String[] wallpapers = new String[0];
     private int wallIndex = -1;
-    private long wallChangedAt;
+    /** Quando (elapsedRealtime) a proxima foto entra. */
+    private long wallDueAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable rotateWallpaper = this::nextWallpaper;
+    private TextView photoCredit;
+    private boolean onlineWallpapers;
+    /** Credito ("autor · licenca") das fotos que vem na APK, por arquivo. */
+    private final Map<String, String> bundledCredits = new HashMap<>();
+    private final java.util.Random random = new java.util.Random();
+    private boolean fetching;
     static final long WALLPAPER_INTERVAL_MS = 10 * 60 * 1000;
     private TextView greeting, clock, ampm, date, title, wifiPill, appsLabel;
     /** Pasta com fotos enviadas pelo usuario; quando tem fotos, substitui as da APK. */
@@ -139,6 +146,7 @@ public class MainActivity extends Activity {
         hidden.add(getPackageName());
         dockIgnore.addAll(Arrays.asList(getResources().getStringArray(R.array.dock_ignore)));
         cols = getResources().getInteger(R.integer.columns);
+        onlineWallpapers = getResources().getBoolean(R.bool.online_wallpapers);
         prefs = getSharedPreferences("dock", MODE_PRIVATE);
         loadDock();
         getWindow().getDecorView().setSystemUiVisibility(
@@ -174,8 +182,8 @@ public class MainActivity extends Activity {
         if (syncUsage() | dockDirty) { dockDirty = false; buildApps(); }
         if (firstShow) { firstShow = false; playEntrance(); }
         // New photo on return if the current one has been up for the full interval.
-        if (wallIndex < 0 || SystemClock.elapsedRealtime() - wallChangedAt >= WALLPAPER_INTERVAL_MS) nextWallpaper();
-        else scheduleWallpaper(WALLPAPER_INTERVAL_MS - (SystemClock.elapsedRealtime() - wallChangedAt));
+        if (wallIndex < 0 || SystemClock.elapsedRealtime() >= wallDueAt) nextWallpaper();
+        else scheduleWallpaper(wallDueAt - SystemClock.elapsedRealtime());
     }
 
     @Override
@@ -295,6 +303,18 @@ public class MainActivity extends Activity {
         bottom.setClipChildren(false);
         bottom.setClipToPadding(false);
         hero.addView(bottom, lp(-1, -2, Gravity.BOTTOM, dp(48), 0, dp(48), dp(30)));
+
+        // Rodape discreto, abaixo do dock: credito da foto a esquerda, assinatura a direita.
+        photoCredit = text(9, "sans-serif", 0x80FFFFFF);
+        photoCredit.setSingleLine(true);
+        photoCredit.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        photoCredit.setShadowLayer(dp(6), 0, dp(1), 0xB3000000);
+        hero.addView(photoCredit, lp(dp(560), -2, Gravity.BOTTOM | Gravity.START, dp(60), 0, 0, dp(9)));
+        TextView signature = text(9, "sans-serif-medium", 0x66FFFFFF);
+        signature.setText(R.string.signature);
+        signature.setLetterSpacing(0.08f);
+        signature.setShadowLayer(dp(6), 0, dp(1), 0xB3000000);
+        hero.addView(signature, lp(-2, -2, Gravity.BOTTOM | Gravity.END, 0, 0, dp(60), dp(9)));
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -1086,6 +1106,13 @@ public class MainActivity extends Activity {
         }
         try {
             wallpapers = getAssets().list("wallpapers");
+            try (java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(getAssets().open("credits.txt"), "UTF-8"))) {
+                for (String line; (line = r.readLine()) != null; ) {
+                    String[] f = line.split("\t");
+                    if (f.length == 3) bundledCredits.put(f[0], "Foto: " + f[1] + " · " + f[2] + " · Wikimedia Commons");
+                }
+            }
         } catch (java.io.IOException ignored) { }
     }
 
@@ -1112,30 +1139,66 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static Bitmap decodeBytes(byte[] data) {
+        BitmapFactory.Options b = new BitmapFactory.Options();
+        b.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(data, 0, data.length, b);
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inPreferredConfig = Bitmap.Config.RGB_565;
+        int sample = 1;
+        while (b.outWidth / (sample * 2) >= 1920) sample *= 2;
+        o.inSampleSize = sample;
+        return BitmapFactory.decodeByteArray(data, 0, data.length, o);
+    }
+
     private ImageView wallpaperLayer() {
         ImageView v = new ImageView(this);
         v.setScaleType(ImageView.ScaleType.CENTER_CROP);
         return v;
     }
 
-    /** Decode the next photo off the main thread, then crossfade it in over the current one. */
+    /**
+     * Proxima foto, sorteada: uma paisagem do Wikimedia Commons quando ha internet, senao uma das locais.
+     * Ao ligar mostra logo uma local e busca a primeira da internet 30 s depois.
+     */
     private void nextWallpaper() {
         handler.removeCallbacks(rotateWallpaper);
-        if (wallpapers.length == 0) return;
-        if (wallIndex < 0) wallIndex = getPreferences(MODE_PRIVATE).getInt("wallpaper", -1);
-        wallIndex = (wallIndex + 1) % wallpapers.length;
-        getPreferences(MODE_PRIVATE).edit().putInt("wallpaper", wallIndex).apply();
-        wallChangedAt = SystemClock.elapsedRealtime();
-        String name = wallpapers[wallIndex];
+        boolean first = wallIndex < 0;
+        long delay = first && onlineWallpapers ? 30_000 : WALLPAPER_INTERVAL_MS;
+        wallDueAt = SystemClock.elapsedRealtime() + delay;
+        scheduleWallpaper(delay);
+        if (fetching) return;
+        fetching = true;
+        boolean online = onlineWallpapers && userWallDir == null && !first;
+        String local = null;
+        if (wallpapers.length > 0) {
+            int i = random.nextInt(wallpapers.length);
+            if (wallpapers.length > 1 && i == wallIndex) i = (i + 1) % wallpapers.length;
+            wallIndex = i;
+            local = wallpapers[i];
+        }
+        String localName = local;
         new Thread(() -> {
-            Bitmap result = decodeWallpaper(name);
-            runOnUiThread(() -> showWallpaper(result));
+            Photo p = online ? onlinePhoto() : null;
+            if (p == null && localName != null) {
+                p = new Photo();
+                p.bitmap = decodeWallpaper(localName);
+                p.credit = userWallDir == null ? bundledCredits.get(localName) : null;
+            }
+            Photo shown = p;
+            runOnUiThread(() -> {
+                fetching = false;
+                if (shown != null) showWallpaper(shown.bitmap, shown.credit);
+            });
         }).start();
-        scheduleWallpaper(WALLPAPER_INTERVAL_MS);
     }
 
-    private void showWallpaper(Bitmap bm) {
+    private void showWallpaper(Bitmap bm, String credit) {
         if (bm == null || isDestroyed()) return;
+        photoCredit.animate().alpha(0f).setDuration(400).withEndAction(() -> {
+            photoCredit.setText(credit == null ? "" : credit);
+            photoCredit.animate().alpha(1f).setDuration(1200).start();
+        }).start();
         // Swap roles: the old front becomes the back, the new photo fades in on top.
         ImageView old = wallFront;
         wallFront = wallBack;
@@ -1156,6 +1219,119 @@ public class MainActivity extends Activity {
     private void scheduleWallpaper(long delay) {
         handler.removeCallbacks(rotateWallpaper);
         handler.postDelayed(rotateWallpaper, Math.max(1000, delay));
+    }
+
+    // ---------------------------------------------------------------- fotos da internet
+
+    /** Paisagens destacadas do Wikimedia Commons: licenca livre e escolhidas pela comunidade. */
+    private static final String COMMONS_API = "https://commons.wikimedia.org/w/api.php?format=json&action=query";
+    private static final String COMMONS_CATEGORY = "Category:Featured pictures of landscapes";
+    /** O Wikimedia pede um User-Agent que identifique o app. */
+    private static final String USER_AGENT = "AndroidTV-V2/2.1 (https://github.com/ogabrielmoreira/Android-TV-V2)";
+
+    static final class Photo {
+        Bitmap bitmap;
+        String credit;
+    }
+
+    /** Uma paisagem aleatoria, ou null sem internet. Roda fora da thread principal. */
+    private Photo onlinePhoto() {
+        try {
+            List<String> titles = commonsTitles();
+            for (int tries = 0; tries < 4 && !titles.isEmpty(); tries++) {
+                org.json.JSONObject info = commonsInfo(titles.get(random.nextInt(titles.size())));
+                // So fotos deitadas: em pe, o corte para a TV perderia quase tudo.
+                if (info == null || info.optInt("width") < info.optInt("height") * 1.3) continue;
+                Bitmap bm = decodeBytes(httpGet(info.getString("thumburl")));
+                if (bm == null) continue;
+                Photo p = new Photo();
+                p.bitmap = bm;
+                p.credit = commonsCredit(info);
+                return p;
+            }
+        } catch (Exception | OutOfMemoryError ignored) {
+            // Sem internet, Wikimedia fora do ar ou pouca memoria: fica a foto local.
+        }
+        return null;
+    }
+
+    /** Nomes dos arquivos da categoria, guardados por uma semana. */
+    private List<String> commonsTitles() throws Exception {
+        File cache = new File(getFilesDir(), "commons-landscapes.txt");
+        if (cache.exists() && System.currentTimeMillis() - cache.lastModified() < 7 * DAY_MS) return readLines(cache);
+        List<String> titles = new ArrayList<>();
+        try {
+            String cont = "";
+            while (cont != null && titles.size() < 3000) {
+                org.json.JSONObject r = new org.json.JSONObject(new String(httpGet(COMMONS_API
+                        + "&list=categorymembers&cmtype=file&cmlimit=500&cmtitle=" + enc(COMMONS_CATEGORY) + cont), "UTF-8"));
+                org.json.JSONArray m = r.getJSONObject("query").getJSONArray("categorymembers");
+                for (int i = 0; i < m.length(); i++) titles.add(m.getJSONObject(i).getString("title"));
+                org.json.JSONObject next = r.optJSONObject("continue");
+                cont = next == null ? null : "&cmcontinue=" + enc(next.getString("cmcontinue"));
+            }
+        } catch (Exception e) {
+            if (cache.exists()) return readLines(cache);
+            throw e;
+        }
+        try (java.io.Writer w = new java.io.OutputStreamWriter(new java.io.FileOutputStream(cache), "UTF-8")) {
+            for (String t : titles) w.write(t + "\n");
+        }
+        return titles;
+    }
+
+    /** Tamanho, miniatura de 1920 px, autor e licenca de um arquivo. */
+    private org.json.JSONObject commonsInfo(String title) throws Exception {
+        org.json.JSONObject r = new org.json.JSONObject(new String(httpGet(COMMONS_API
+                + "&prop=imageinfo&iiprop=url%7Csize%7Cuser%7Cextmetadata&iiurlwidth=1920"
+                + "&iiextmetadatafilter=Artist%7CLicenseShortName&titles=" + enc(title)), "UTF-8"));
+        org.json.JSONObject pages = r.getJSONObject("query").getJSONObject("pages");
+        org.json.JSONArray info = pages.getJSONObject(pages.keys().next()).optJSONArray("imageinfo");
+        return info == null ? null : info.getJSONObject(0);
+    }
+
+    /** "Foto: autor · licenca · Wikimedia Commons". As licencas CC BY pedem o nome do autor. */
+    private static String commonsCredit(org.json.JSONObject info) {
+        org.json.JSONObject ext = info.optJSONObject("extmetadata");
+        String artist = ext == null ? "" : android.text.Html.fromHtml(
+                ext.optJSONObject("Artist") == null ? "" : ext.optJSONObject("Artist").optString("value")).toString();
+        artist = artist.replaceAll("\\s+", " ").trim();
+        // Alguns autores escrevem um recado no lugar do nome: ai vale o usuario que enviou a foto.
+        if (artist.isEmpty() || artist.length() > 40 || artist.contains("@")) artist = info.optString("user");
+        String license = ext == null || ext.optJSONObject("LicenseShortName") == null ? ""
+                : ext.optJSONObject("LicenseShortName").optString("value");
+        return "Foto: " + artist + (license.isEmpty() ? "" : " · " + license) + " · Wikimedia Commons";
+    }
+
+    private static byte[] httpGet(String url) throws java.io.IOException {
+        java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+        c.setConnectTimeout(8000);
+        c.setReadTimeout(15000);
+        c.setRequestProperty("User-Agent", USER_AGENT);
+        try (java.io.InputStream in = c.getInputStream()) {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[16384];
+            for (int n; (n = in.read(buf)) > 0; ) {
+                out.write(buf, 0, n);
+                if (out.size() > 12 * 1024 * 1024) throw new java.io.IOException("arquivo grande demais");
+            }
+            return out.toByteArray();
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private static String enc(String s) throws java.io.UnsupportedEncodingException {
+        return java.net.URLEncoder.encode(s, "UTF-8");
+    }
+
+    private static List<String> readLines(File f) throws java.io.IOException {
+        List<String> lines = new ArrayList<>();
+        try (java.io.BufferedReader r = new java.io.BufferedReader(
+                new java.io.InputStreamReader(new java.io.FileInputStream(f), "UTF-8"))) {
+            for (String line; (line = r.readLine()) != null; ) if (!line.isEmpty()) lines.add(line);
+        }
+        return lines;
     }
 
     /** Average the banner's vivid pixels, then push saturation so the glow reads as a colour. */
